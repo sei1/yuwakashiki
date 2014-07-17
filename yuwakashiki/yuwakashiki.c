@@ -51,9 +51,6 @@ PD7 … LED ヒーターON表示兼、機械式リレーON/OFF
 //ノンアークリレーのON/OFFずらし時間(ミリ秒)
 #define ARC_PROTECT_DELAY 200
 
-//温度のサンプリング回数
-#define SAMPLE_TIME 100;
-
 //---------------------------------
 //グローバル変数の宣言
 //---------------------------------
@@ -85,6 +82,9 @@ unsigned char timer = 0;
 //時間計測用変数
 unsigned long time_count = 0;
 
+//温度のサンプリング回数
+unsigned char sample_time = 100;
+
 //時間計測用変数が30分を表す数値(≒ミリ秒)
 unsigned long half_hour = 1838000;
 
@@ -95,11 +95,13 @@ unsigned char wink_count = 0;
 volatile unsigned int count = 0;
 
 //7セグLEDの0～9を点灯させるビットの配列
-unsigned char seg[10] = {0b00111111, 0b00000110,
+unsigned char seg[10] = {
+	0b00111111, 0b00000110,
 	0b01011011, 0b01001111,
 	0b01100110, 0b01101101,
 	0b01111101, 0b00100111,
-0b01111111, 0b01101111};
+	0b01111111, 0b01101111
+};
 
 //アラームを鳴らす関数(ピッピー)
 void alarm(char num) {
@@ -523,12 +525,14 @@ int main(void) {
 	temp = get_temp();
 
 	double z;
+	double history1 = 0.0;
+	double history2 = 0.0;
+	double history3 = 0.0;
 
 	while (1) {
 
 		z = 0.0;
-
-		for ( unsigned char i = 0; i < SAMPLE_TIME i++ ){
+		for ( unsigned char i = 0; i < sample_time; i++ ){
 
 			//ボタンが押されたかを検知する
 			button_sensor();
@@ -538,7 +542,17 @@ int main(void) {
 
 		}
 
-		temp = z / SAMPLE_TIME;
+		//過去2回のサンプリング履歴があればそれも平均の算出に使用
+		if (history1 != 0.0 && history2 != 0.0 && history3 != 0.0) {
+			temp = (z + history1 + history2 + history3) / (sample_time * 4);
+		} else {
+			temp = z / sample_time;
+		}
+
+		//履歴を重ねていく
+		history3 = history2;
+		history2 = history1;
+		history1 = z;
 
 		//ヒーターのON・OFF制御
 		heater_control();

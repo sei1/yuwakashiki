@@ -1,5 +1,4 @@
 /*
-
 ――――――――――――――――――――――――――――――――――――
 □ I/Oピン設定
 ――――――――――――――――――――――――――――――――――――
@@ -52,7 +51,8 @@ PD7 … LED ヒーターON表示兼、機械式リレーON/OFF
 //ノンアークリレーのON/OFFずらし時間(ミリ秒)
 #define ARC_PROTECT_DELAY 200
 
-
+//温度のサンプリング回数
+#define SAMPLE_TIME 100;
 
 //---------------------------------
 //グローバル変数の宣言
@@ -103,7 +103,7 @@ unsigned char seg[10] = {0b00111111, 0b00000110,
 
 //アラームを鳴らす関数(ピッピー)
 void alarm(char num) {
-	
+
 	for (char i = 0; i < num; i++){
 
 		PORTC = PORTC | 0b00000010;
@@ -120,7 +120,7 @@ void alarm(char num) {
 
 //操作音を鳴らす関数2(ピッ)
 void se(char num) {
-	
+
 	for (char i = 0; i < num; i++){
 
 		PORTC = PORTC | 0b00000010;
@@ -133,7 +133,7 @@ void se(char num) {
 
 void display (void) {
 
-	switch( mode ) {
+	switch ( mode ) {
 
 		case MODE_TARGET:
 		count = target;
@@ -158,7 +158,7 @@ ISR (TIMER0_COMPA_vect) {
 	dig1  = seg[count % 10];
 	dig10 = seg[(count / 10) % 10];
 
-	switch( sel ) {
+	switch ( sel ) {
 
 		case 0:
 		PORTD = PORTD | 0b00000001;
@@ -168,7 +168,7 @@ ISR (TIMER0_COMPA_vect) {
 		//タイマーモードなら"."を表示
 		//この信号は7セグに繋がってないので実際には一番右の小数点は点灯しない。
 		//しかし、タイマーモード表示用LEDと兼用のため、点灯の信号を送っている。
-		if( mode == MODE_TIMER ) {
+		if ( mode == MODE_TIMER ) {
 			PORTB = 0b10000000 | dig1;
 			}else{
 			PORTB = dig1;
@@ -180,29 +180,29 @@ ISR (TIMER0_COMPA_vect) {
 		PORTD = PORTD & 0b11111110;
 
 		//タイマーモードなら"."を表示
-		if( mode == MODE_TIMER ) {
+		if ( mode == MODE_TIMER ) {
 			PORTB = 0b10000000 | dig10;
 			}else{
 			PORTB = dig10;
 		}
-		
+
 		break;
 
 	}
 
 	sel++;
 
-	if( sel == 2 ) {
+	if ( sel == 2 ) {
 		sel = 0;
 	}
-	
+
 	//タイマーセット中なら
-	if( started == 2 ) {
-		
+	if ( started == 2 ) {
+
 		time_count += 5;
-		
+
 		//time_countが30分の値に達したら
-		if( time_count >= half_hour ) {
+		if ( time_count >= half_hour ) {
 			//カウントを0に戻し、
 			time_count = 0;
 			//タイマーの時間を0.5時間減らす
@@ -211,9 +211,9 @@ ISR (TIMER0_COMPA_vect) {
 			}
 			//7セグLEDを表示
 			display();
-			
+
 			//タイマーの時間が0になったら
-			if( timer == 0 ) {
+			if ( timer == 0 ) {
 				//スタート
 				started = 1;
 				PORTD = PORTD | 0b00001000;//ON
@@ -222,30 +222,30 @@ ISR (TIMER0_COMPA_vect) {
 
 		//スタートLEDを点滅させる
 		wink_count++;
-		if( wink_count == 128 ) {
+		if ( wink_count == 128 ) {
 			wink_count =0;
-			if( PORTD == (PORTD & 0b11110111) ) {
+			if ( PORTD == (PORTD & 0b11110111) ) {
 				PORTD =   PORTD | 0b00001000;
 				}else{
 				PORTD =   PORTD & 0b11110111;
 			}
 		}
 	}
-	
+
 }
 
 //SSR ON→機械式リレーON→SSR OFFの順にヒーターをONにする関数
 void heater_on(void) {
-	
+
 	//機械式リレーがOFFなら
-	if( (PORTD & 0b10000000) == 0 ) {
+	if ( (PORTD & 0b10000000) == 0 ) {
 		//まずSSRをON
 		PORTD = PORTD | 0b00010000;//SSR ON
 
 		//やや遅れて機械式リレーON
 		_delay_ms(ARC_PROTECT_DELAY);
 		PORTD = PORTD | 0b10000000;//機械式リレーON
-		
+
 		//さらにやや遅れてSSRをOFF
 		_delay_ms(ARC_PROTECT_DELAY * 2);
 		PORTD = PORTD & 0b11101111;//SSR OFF
@@ -254,12 +254,12 @@ void heater_on(void) {
 
 //SSR ON→機械式リレーOFF→SSR OFFの順にヒーターをOFFにする関数
 void heater_off(void) {
-	
+
 	//機械式リレーがONなら
-	if( (PORTD & 0b10000000) != 0 ) {
+	if ( (PORTD & 0b10000000) != 0 ) {
 		//まずSSRをON
 		PORTD = PORTD | 0b00010000;//SSR ON
-		
+
 		//まず機械式リレーOFF
 		_delay_ms(ARC_PROTECT_DELAY);
 		PORTD = PORTD & 0b01111111;//機械式リレーOFF
@@ -272,13 +272,13 @@ void heater_off(void) {
 
 //ヒーター(PD4)のON/OFFを制御する関数
 void heater_control(void) {
-	
+
 	//スタート状態なら
-	if( started == 1 ) {
+	if ( started == 1 ) {
 		//現在温度が設定温度より上回っているなら
-		if( is_over ) {
+		if ( is_over ) {
 			//現在温度が設定温度より低ければ
-			if( temp <= ((float)target)  ) {
+			if ( temp <= ((float)target)  ) {
 				heater_on();
 				is_over = 0;
 				}else{
@@ -287,7 +287,7 @@ void heater_control(void) {
 			}else{
 			//現在温度が設定温度より下回っているなら
 			//現在温度が設定温度+0.5℃より低ければ
-			if( temp <= ((float)target + 0.5) ) {
+			if ( temp <= ((float)target + 0.5) ) {
 				heater_on();
 				}else{
 				heater_off();
@@ -305,11 +305,11 @@ void heater_control(void) {
 
 //スタートとストップを切り替える関数
 void change_start (void) {
-	
+
 	//切り替える
-	if( started == 0 ) {
+	if ( started == 0 ) {
 		//タイマーに数値がセットされていなければ1、セットされていれば2。
-		if( timer == 0 ) {
+		if ( timer == 0 ) {
 			started = 1;
 			}else{
 			started = 2;
@@ -333,11 +333,11 @@ void change_start (void) {
 
 //モードを切り替える関数
 void change_mode (void) {
-	
+
 	//モードを切り替える（1→2→3トグル）
 	//モード表示用LEDも同時に切り替える。
-	switch( mode ) {
-		
+	switch ( mode ) {
+
 		case MODE_TARGET:
 		mode = MODE_MONITOR;
 		PORTD = PORTD & 0b10011111;
@@ -350,13 +350,13 @@ void change_mode (void) {
 		//モード表示用LEDも点灯させるため、ここでは点灯設定不要
 		PORTD = PORTD & 0b10011111;
 		break;
-		
+
 		case MODE_TIMER:
 		mode = MODE_TARGET;
 		PORTD = PORTD & 0b10011111;
 		PORTD = PORTD | 0b00100000;
 		break;
-		
+
 	}
 
 	//7セグLEDを表示
@@ -366,28 +366,28 @@ void change_mode (void) {
 
 //設定値をカウントアップする関数
 void count_up (void) {
-	
-	switch( mode ) {
-		
+
+	switch ( mode ) {
+
 		//設定温度モードなら
 		case MODE_TARGET:
-		if( target < TARGET_MAX ) {
+		if ( target < TARGET_MAX ) {
 			target++;
 
 			//EEPROMにデータ保存
 			eeprom_busy_wait();/* 読み書き可能になるまで待つ */
 			eeprom_write_byte(0x00, target);/* 値0xAAをEEPROMの0番地に書き込む */
 		}
-		
+
 		break;
 
 		//タイマーモードなら
 		case MODE_TIMER:
-		if( timer < TIMER_MAX ) {
+		if ( timer < TIMER_MAX ) {
 			timer += 5;
 		}
 		break;
-		
+
 	}
 
 	//7セグLEDを表示
@@ -397,28 +397,28 @@ void count_up (void) {
 
 //設定値をカウントダウンする関数
 void count_down (void) {
-	
-	switch( mode ) {
-		
+
+	switch ( mode ) {
+
 		//設定温度モードなら
 		case MODE_TARGET:
-		if( target > TARGET_MIN ) {
+		if ( target > TARGET_MIN ) {
 			target--;
-			
+
 			//EEPROMにデータ保存
 			eeprom_busy_wait();/* 読み書き可能になるまで待つ */
 			eeprom_write_byte(0x00, target);/* 値0xAAをEEPROMの0番地に書き込む */
 		}
-		
+
 		break;
 
 		//タイマーモードなら
 		case MODE_TIMER:
-		if( timer > TIMER_MIN ) {
+		if ( timer > TIMER_MIN ) {
 			timer -= 5;
 		}
 		break;
-		
+
 	}
 
 	//7セグLEDを表示
@@ -430,22 +430,22 @@ void count_down (void) {
 void button_sensor (void) {
 
 	//STARTボタンが押されたら
-	if( bit_is_clear(PIND, PD2) ) {
+	if ( bit_is_clear(PIND, PD2) ) {
 		change_start();
 	}
 
 	//モード切り替えボタンが押されたら
-	if( bit_is_clear(PINC, PC3) ) {
+	if ( bit_is_clear(PINC, PC3) ) {
 		change_mode();
 	}
 
 	//UPボタンが押されたら
-	if( bit_is_clear(PINC, PC4) ) {
+	if ( bit_is_clear(PINC, PC4) ) {
 		count_up();
 	}
 
 	//DOWNボタンが押されたら
-	if( bit_is_clear(PINC, PC5) ) {
+	if ( bit_is_clear(PINC, PC5) ) {
 		count_down();
 	}
 }
@@ -462,7 +462,7 @@ float get_temp (void) {
 	//AD変換開始
 	ADCSRA = ADCSRA | 0b01000000;
 	//変換中はループ
-	while(ADCSRA & 0b01000000);
+	while (ADCSRA & 0b01000000);
 
 	y = ADC;
 
@@ -472,7 +472,7 @@ float get_temp (void) {
 	//AD変換開始
 	ADCSRA = ADCSRA | 0b01000000;
 	//変換中はループ
-	while(ADCSRA & 0b01000000);
+	while (ADCSRA & 0b01000000);
 
 	x = ADC;
 
@@ -486,12 +486,12 @@ int main(void) {
 	DDRB  = 0b11111111; //ポートB
 	DDRC  = 0b11000110; //ポートC
 	DDRD  = 0b11111011; //ポートD
-	
+
 	//出力の初期化
 	PORTB = 0b00000000; //PBは0番だけを1にすることで内部のプルアップ抵抗を有効にする
 	PORTC = 0b00111000; //PCすべてLow
 	PORTD = 0b00100100; //PDすべてLow
-	
+
 	//タイマー0(7セグダイナミック点灯用タイマー)
 	TCCR0A = 0b00000010;//CTCモード
 	TCCR0B = 0b00000101;//約1kHz
@@ -503,7 +503,7 @@ int main(void) {
 	ADMUX  = 0b00000000; //ADC0 AREF 右
 
 	_delay_ms(5);
-	
+
 	sei();//全体の割り込み許可
 
 	//EEPROMから設定温度を読み込み
@@ -511,7 +511,7 @@ int main(void) {
 	target = eeprom_read_byte(0x00); //EEPROMから(0x00)番地を読み込み
 	//設定温度が最大・最小値の外だったら40℃に設定。
 	//どうも初回起動時はこの番地(0x00)のメモリの値は大概255になる模様。なのでこれは初回起動時用の設定。
-	if( (target < TARGET_MIN) || (target > TARGET_MAX) ) {
+	if ( (target < TARGET_MIN) || (target > TARGET_MAX) ) {
 		target = TARGET_DEFAULT;
 	}
 
@@ -524,25 +524,25 @@ int main(void) {
 
 	double z;
 
-	while(1) {
-		
+	while (1) {
+
 		z = 0.0;
 
-		for( unsigned char i = 0; i < 100; i++ ){
-			
+		for ( unsigned char i = 0; i < SAMPLE_TIME i++ ){
+
 			//ボタンが押されたかを検知する
 			button_sensor();
-			
+
 			//計測した温度をz変数に繰り返し加算
 			z += get_temp();
 
 		}
 
-		temp = z / 100;
+		temp = z / SAMPLE_TIME;
 
 		//ヒーターのON・OFF制御
 		heater_control();
-		
+
 		//7セグLEDを表示
 		display();
 
@@ -550,10 +550,10 @@ int main(void) {
 		//---------------------------------
 		// 設定温度に達したらアラームを鳴らす
 		//---------------------------------
-		
+
 		//スタートしており、かつ保温モードでなければ
-		if( started == 1 && is_over == 1 && (! is_keep_mood) ) {
-			
+		if ( started == 1 && is_over == 1 && (! is_keep_mood) ) {
+
 			//アラームを鳴らす
 			alarm(3);
 
@@ -564,7 +564,7 @@ int main(void) {
 		//---------------------------------
 		// 保温モードなら保温LED点灯
 		//---------------------------------
-		if( is_keep_mood ) {
+		if ( is_keep_mood ) {
 			PORTC = PORTC | 0b00000100;
 			}else{
 			PORTC = PORTC & 0b11111011;

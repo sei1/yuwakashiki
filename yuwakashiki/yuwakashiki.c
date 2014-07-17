@@ -1,5 +1,5 @@
 /*
-本採用中プログラム
+
 ――――――――――――――――――――――――――――――――――――
 □ I/Oピン設定
 ――――――――――――――――――――――――――――――――――――
@@ -24,17 +24,17 @@ PD0 … 7セグLEDダイナミック点灯用トランジスタ制御
 PD1 … 7セグLEDダイナミック点灯用トランジスタ制御
 PD2 … ボタン START
 PD3 … LED タイマーセット表示
-PD4 … LED ヒーターON表示兼、ソリッドステートリレーON/OFF
+PD4 … ソリッドステートリレーON/OFF
 PD5 … LED 設定温度(TARGET)モード表示
 PD6 … LED 現在温度(MONITOR)モード表示
-PD7 … 機械式リレーON/OFF
+PD7 … LED ヒーターON表示兼、機械式リレーON/OFF
 
 */
 
 #include<avr/io.h>
 #include<util/delay.h>
 #include<avr/interrupt.h>
-#include <avr/eeprom.h>
+#include<avr/eeprom.h>
 
 #define MODE_TARGET 1
 #define MODE_MONITOR 2
@@ -246,6 +246,9 @@ void heater_on(void) {
 		_delay_ms(ARC_PROTECT_DELAY);
 		PORTD = PORTD | 0b10000000;//機械式リレーON
 		
+		//さらにやや遅れてSSRをOFF
+		_delay_ms(ARC_PROTECT_DELAY * 2);
+		PORTD = PORTD & 0b11101111;//SSR OFF
 	}
 }
 
@@ -254,7 +257,11 @@ void heater_off(void) {
 	
 	//機械式リレーがONなら
 	if( (PORTD & 0b10000000) != 0 ) {
+		//まずSSRをON
+		PORTD = PORTD | 0b00010000;//SSR ON
+		
 		//まず機械式リレーOFF
+		_delay_ms(ARC_PROTECT_DELAY);
 		PORTD = PORTD & 0b01111111;//機械式リレーOFF
 
 		//さらにやや遅れてSSRをOFF

@@ -38,6 +38,7 @@ PD7 … LED ヒーターON表示兼、機械式リレーON/OFF
 #define MODE_TARGET 1
 #define MODE_MONITOR 2
 #define MODE_TIMER 3
+#define MODE_CHIP_MONITOR 4
 
 //最大値・最小値の設定
 #define TARGET_MAX 50
@@ -72,6 +73,9 @@ unsigned char target;
 
 //現在の温度
 double temp = 0.0;
+
+//現在のチップ温度
+double chip_temp = 0.0;
 
 //現在、設定温度を上回ってるか（=1）下回ってるか（=0）
 unsigned char is_over = 0;
@@ -149,6 +153,9 @@ void display (void) {
 		count = timer;
 		break;
 
+		case MODE_CHIP_MONITOR:
+		count = chip_temp;
+		break;
 	}
 }
 
@@ -272,6 +279,15 @@ void heater_off(void) {
 	}
 }
 
+//ストップに切り替える関数
+void change_stop (char se_num) {
+	started = 0;
+	se(se_num);
+	is_keep_mood = 0;
+	PORTC = PORTC & 0b11111011;//保温モードLED OFF
+	PORTD = PORTD & 0b11110111;//スタートLED OFF
+}
+
 //ヒーター(PD4)のON/OFFを制御する関数
 void heater_control(void) {
 
@@ -296,14 +312,15 @@ void heater_control(void) {
 				is_over = 1;
 			}
 		}
-		}else{
+		//チップ温度が80℃を超えていたら
+		if (chip_temp > 80) {
+			change_stop(5);
+		}
+	}else{
 		//スタート状態じゃなかったら
 		heater_off();
 	}
 }
-
-
-
 
 //スタートとストップを切り替える関数
 void change_start (void) {
@@ -320,12 +337,8 @@ void change_start (void) {
 		se(1);
 		PORTD = PORTD | 0b00001000;//ON
 
-		}else{
-		started = 0;
-		se(2);
-		is_keep_mood = 0;
-		PORTC = PORTC & 0b11111011;//保温モードLED OFF
-		PORTD = PORTD & 0b11110111;//スタートLED OFF
+	}else{
+		change_stop(2);
 	}
 
 	//ヒーターのON・OFF制御
@@ -450,6 +463,23 @@ void button_sensor (void) {
 	if ( bit_is_clear(PINC, PC5) ) {
 		count_down();
 	}
+
+	//現在温度表示モードかつモード切り替えボタンとUPボタンとDOWNボタンが同時に押されたらチップ温度表示モード(デバッグ用)
+	if (mode == MODE_MONITOR &&
+		bit_is_clear(PINC, PC3) &&
+		bit_is_clear(PINC, PC4) &&
+		bit_is_clear(PINC, PC5)) {
+		mode = MODE_CHIP_MONITOR;
+	}
+
+	//ボタンを放したらチップ温度表示モードから現在温度表示モード戻る
+	if (mode == MODE_CHIP_MONITOR && (
+			bit_is_set(PINC, PC3) ||
+			bit_is_set(PINC, PC4) ||
+			bit_is_set(PINC, PC5)
+		)) {
+		mode = MODE_MONITOR;
+	}
 }
 
 //AD変換を利用し温度を測定し、測定した温度(℃)をfloat型の数値で返す関数
@@ -459,7 +489,7 @@ float get_temp (void) {
 
 	//温度測定(初回1回)
 	ADMUX  = 0b00001110;
-	_delay_ms(5);
+	_delay_ms(3);
 
 	//AD変換開始
 	ADCSRA = ADCSRA | 0b01000000;
@@ -469,7 +499,7 @@ float get_temp (void) {
 	y = ADC;
 
 	ADMUX  = 0b00000000;
-	_delay_ms(5);
+	_delay_ms(3);
 
 	//AD変換開始
 	ADCSRA = ADCSRA | 0b01000000;
@@ -479,7 +509,36 @@ float get_temp (void) {
 	x = ADC;
 
 	return 100 * ( (float)x / (float)y * 1.1 );
+}
 
+//AD変換を利用しマイコンチップ(≒コントローラー本体内)の温度を測定し、測定した温度(℃)をfloat型の数値で返す関数
+float get_chip_temp (void) {
+
+	int x,y,mv;
+
+	//温度測定(初回1回)
+	ADMUX  = 0b00001110;
+	_delay_ms(3);
+
+	//AD変換開始
+	ADCSRA = ADCSRA | 0b01000000;
+	//変換中はループ
+	while (ADCSRA & 0b01000000);
+
+	y = ADC;
+
+	ADMUX  = 0b00001000;
+	_delay_ms(3);
+
+	//AD変換開始
+	ADCSRA = ADCSRA | 0b01000000;
+	//変換中はループ
+	while (ADCSRA & 0b01000000);
+
+	x = ADC;
+
+	mv = 1000 * (((float)x / (float)y) * 1.1);
+	return (mv - 242) * 1.061 - 45 - 15;
 }
 
 int main(void) {
@@ -520,39 +579,51 @@ int main(void) {
 	//7セグLEDを表示
 	display();
 
-
 	//温度測定(起動時に素早く表示するために1回だけ測定する)
 	temp = get_temp();
+	chip_temp = get_chip_temp();
 
-	double z;
-	double history1 = 0.0;
-	double history2 = 0.0;
-	double history3 = 0.0;
+	double y, z;
+	//温度のサンプリング履歴
+	double      history[3] = {0.0, 0.0, 0.0};
+	double chip_history[3] = {0.0, 0.0, 0.0};
 
 	while (1) {
 
+		y = 0.0;
 		z = 0.0;
 		for ( unsigned char i = 0; i < sample_time; i++ ){
 
 			//ボタンが押されたかを検知する
 			button_sensor();
 
-			//計測した温度をz変数に繰り返し加算
-			z += get_temp();
+			//計測した温度をy変数に繰り返し加算
+			y += get_temp();
 
+			//ボタンが押されたかを検知する
+			button_sensor();
+
+			//計測したチップ温度をy変数に繰り返し加算
+			z += get_chip_temp();
 		}
 
 		//過去2回のサンプリング履歴があればそれも平均の算出に使用
-		if (history1 != 0.0 && history2 != 0.0 && history3 != 0.0) {
-			temp = (z + history1 + history2 + history3) / (sample_time * 4);
+		if (history[2] != 0.0 && chip_history[2] != 0.0) {
+			temp      = (y +      history[0] +      history[1] +      history[2]) / (sample_time * 4);
+			chip_temp = (z + chip_history[0] + chip_history[1] + chip_history[2]) / (sample_time * 4);
 		} else {
-			temp = z / sample_time;
+			temp      = y / sample_time;
+			chip_temp = z / sample_time;
 		}
 
 		//履歴を重ねていく
-		history3 = history2;
-		history2 = history1;
-		history1 = z;
+		history[2] = history[1];
+		history[1] = history[0];
+		history[0] = y;
+
+		chip_history[2] = chip_history[1];
+		chip_history[1] = chip_history[0];
+		chip_history[0] = z;
 
 		//ヒーターのON・OFF制御
 		heater_control();
